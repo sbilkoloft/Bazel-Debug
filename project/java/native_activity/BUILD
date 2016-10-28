@@ -2,7 +2,10 @@ android_binary(
     name = 'myapp',
     legacy_native_support = 0,
     manifest = 'AndroidManifest.xml',
-    deps = ['//project:main'],
+    deps = [
+        '//project:main',
+	'@androidsdk//com.google.firebase:firebase-ads-9.6.1'
+    ],
 
     resource_files = glob(['res/**']),
 

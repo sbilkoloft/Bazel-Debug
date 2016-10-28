@@ -29,10 +29,10 @@
 #include "third_party/android_native_app_glue.h" // modified to point to local version
 
 // These headers cause a problem when included:
-// #include "firebase/admob.h"
-// #include "firebase/admob/types.h"
-// #include "firebase/app.h"
-// #include "firebase/future.h"
+#include "firebase/admob.h"
+#include "firebase/admob/types.h"
+#include "firebase/app.h"
+#include "firebase/future.h"
 
 #define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "native-activity", __VA_ARGS__))
 #define LOGW(...) ((void)__android_log_print(ANDROID_LOG_WARN, "native-activity", __VA_ARGS__))
@@ -64,6 +64,33 @@ struct engine {
     int32_t height;
     struct saved_state state;
 };
+
+void init_admob(struct android_app* state) {
+  JavaVM* vm = state->activity->vm;
+  JNIEnv* env = NULL;
+  jint result = vm->AttachCurrentThread(&env, NULL);
+  if (result != JNI_OK) {
+    return;
+  }
+
+  firebase::AppOptions options;
+  options.set_app_id("app-id");
+  options.set_api_key("some-api-key");
+  firebase::App* firebase_app = firebase::App::Create(
+      options, env, state->activity->clazz);
+
+  const char* kAdMobAppID = "admob-id";
+
+  // Test add ids.
+  const char* kBannerAdUnit = "ca-app-pub-3940256099942544/6300978111";
+  const char* kInterstitialAdUnit = "ca-app-pub-3940256099942544/1033173712";
+
+  firebase::admob::Initialize(*firebase_app, kAdMobAppID);
+}
+
+void release_admob(struct android_app* state) {
+  state->activity->vm->DetachCurrentThread();
+}
 
 /**
  * Initialize an EGL context for the current display.
@@ -288,6 +315,8 @@ void android_main(struct android_app* state) {
         engine.state = *(struct saved_state*)state->savedState;
     }
 
+    init_admob(state);
+
     // loop waiting for stuff to do.
 
     while (1) {
@@ -339,5 +368,7 @@ void android_main(struct android_app* state) {
             engine_draw_frame(&engine);
         }
     }
+
+    release_admob(state);
 }
 //END_INCLUDE(all)

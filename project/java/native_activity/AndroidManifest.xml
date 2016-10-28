@@ -1,18 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- BEGIN_INCLUDE(manifest) -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-          package="myapp.android"
+          package="mybazelapp.android"
           android:versionCode="1"
           android:versionName="1.0">
+  <uses-sdk android:minSdkVersion="9" />
 
-  <!-- This .apk has no Java code itself, so set hasCode to false. -->
   <application android:label="@string/app_name">
-    <!-- Our activity is the built-in NativeActivity framework class.
-         This will take care of integrating with our NDK code. -->
     <activity android:name="android.app.NativeActivity"
-              android:label="@string/app_name"
-              android:configChanges="orientation|keyboardHidden">
-      <!-- Tell NativeActivity the name of or .so -->
+              android:label="@string/app_name">
       <meta-data android:name="android.app.lib_name"
                  android:value="myapp" />
       <intent-filter>
@@ -21,6 +16,4 @@
       </intent-filter>
     </activity>
   </application>
-
 </manifest>
-<!-- END_INCLUDE(manifest) -->
