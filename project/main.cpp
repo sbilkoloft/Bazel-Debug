@@ -30,16 +30,31 @@
 
 // These headers cause a problem when included:
 #include "firebase/admob.h"
+#include "firebase/admob/rewarded_video.h"
 #include "firebase/admob/types.h"
 #include "firebase/app.h"
 #include "firebase/future.h"
 
-#define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "native-activity", __VA_ARGS__))
-#define LOGW(...) ((void)__android_log_print(ANDROID_LOG_WARN, "native-activity", __VA_ARGS__))
+#define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "native_activity", __VA_ARGS__))
+#define LOGW(...) ((void)__android_log_print(ANDROID_LOG_WARN, "native_activity", __VA_ARGS__))
+#define LOGE(...) ((void)__android_log_print(ANDROID_LOG_ERROR, "native_activity", __VA_ARGS__))
 
-/**
- * Our saved state data.
- */
+// App Id and key.
+const char* kAppID = "APP_ID";
+const char* kApiKey = "API_KEY";
+const char* kAdMobAppID = "ADD_MOB_ID";
+
+// Test add ids.
+const char* kBannerAdUnit = "ca-app-pub-3940256099942544/6300978111";
+const char* kInterstitialAdUnit = "ca-app-pub-3940256099942544/1033173712";
+
+// Test device Ids.
+// To find the id for a specific device, run the app, do a logcat and grep
+// for "Ads". There will be a message printing the device id.
+const char* kTestDeviceIDs[] = {
+  "TEST_DEVICE_ID"
+};
+
 struct saved_state {
     float angle;
     int32_t x;
@@ -65,6 +80,31 @@ struct engine {
     struct saved_state state;
 };
 
+bool ProcessEvents(struct android_app* state, int msec) {
+  struct android_poll_source* source = nullptr;
+  int events;
+  int looperId = ALooper_pollAll(msec, nullptr, &events,
+                                 reinterpret_cast<void**>(&source));
+  if (looperId >= 0 && source) {
+    source->process(state, source);
+  }
+  return false;
+}
+
+void WaitForFutureCompletion(
+    struct android_app* state, firebase::FutureBase future) {
+  while (!ProcessEvents(state, 1000)) {
+    if (future.Status() != firebase::kFutureStatusPending) {
+      break;
+    }
+  }
+
+  if (future.Error() != firebase::admob::kAdMobErrorNone) {
+    LOGE("ERROR: Action failed with error code %d and message \"%s\".",
+         future.Error(), future.ErrorMessage());
+  }
+}
+
 void init_admob(struct android_app* state) {
   JavaVM* vm = state->activity->vm;
   JNIEnv* env = NULL;
@@ -72,24 +112,95 @@ void init_admob(struct android_app* state) {
   if (result != JNI_OK) {
     return;
   }
+  LOGI("Attached thread");
 
   firebase::AppOptions options;
-  options.set_app_id("app-id");
-  options.set_api_key("some-api-key");
+  options.set_app_id(kAppID);
+  options.set_api_key(kApiKey);
   firebase::App* firebase_app = firebase::App::Create(
       options, env, state->activity->clazz);
-
-  const char* kAdMobAppID = "admob-id";
-
-  // Test add ids.
-  const char* kBannerAdUnit = "ca-app-pub-3940256099942544/6300978111";
-  const char* kInterstitialAdUnit = "ca-app-pub-3940256099942544/1033173712";
+  LOGI("Created firebase app");
 
   firebase::admob::Initialize(*firebase_app, kAdMobAppID);
+  LOGI("Initialized firebase app");
+
+  firebase::admob::rewarded_video::Initialize();
+  WaitForFutureCompletion(state, firebase::admob::rewarded_video::InitializeLastResult());
+  LOGI("Initialized rewarded video");
 }
 
 void release_admob(struct android_app* state) {
+  firebase::admob::rewarded_video::Destroy();
+
   state->activity->vm->DetachCurrentThread();
+}
+
+firebase::admob::AdRequest get_request() {
+  firebase::admob::AdRequest request;
+  request.gender = firebase::admob::kGenderUnknown;
+  request.tagged_for_child_directed_treatment =
+      firebase::admob::kChildDirectedTreatmentStateTagged;
+  request.birthday_day = 10;
+  request.birthday_month = 11;
+  request.birthday_year = 1976;
+  request.keyword_count = 0;
+  request.extras_count = 0;
+  request.test_device_id_count = sizeof(kTestDeviceIDs) / sizeof(kTestDeviceIDs[0]);
+  request.test_device_ids = kTestDeviceIDs;
+
+  return request;
+}
+
+void load_banner_ad(struct android_app* state) {
+  firebase::admob::BannerView* banner_view;
+  banner_view = new firebase::admob::BannerView();
+
+  firebase::admob::AdSize ad_size;
+  ad_size.ad_size_type = firebase::admob::kAdSizeStandard;
+  ad_size.width = 320;
+  ad_size.height = 50;
+  banner_view->Initialize(state->activity->clazz, kBannerAdUnit, ad_size);
+  WaitForFutureCompletion(state, banner_view->InitializeLastResult());
+
+  LOGI("Loading a banner ad.");
+  banner_view->LoadAd(get_request());
+  WaitForFutureCompletion(state, banner_view->LoadAdLastResult());
+
+  LOGI("Showing the banner ad.");
+  banner_view->Show();
+  WaitForFutureCompletion(state, banner_view->ShowLastResult());
+}
+
+void load_interstitial_ad(struct android_app* state) {
+  LOGW("Creating the InterstitialAd.");
+  firebase::admob::InterstitialAd* interstitial =
+      new firebase::admob::InterstitialAd();
+  interstitial->Initialize(state->activity->clazz, kInterstitialAdUnit);
+  WaitForFutureCompletion(state, interstitial->InitializeLastResult());
+
+  LOGW("Loading an interstitial ad.");
+  interstitial->LoadAd(get_request());
+  WaitForFutureCompletion(state, interstitial->LoadAdLastResult());
+
+  LOGW("Showing the interstitial ad.");
+  interstitial->Show();
+  WaitForFutureCompletion(state, interstitial->ShowLastResult());
+
+  while (interstitial->GetPresentationState() !=
+         firebase::admob::InterstitialAd::PresentationState::
+             kPresentationStateHidden) {
+    ProcessEvents(state, 1000);
+  }
+}
+
+void load_rewarded_video(struct android_app* state) {
+  firebase::admob::rewarded_video::LoadAd(kInterstitialAdUnit, get_request());
+  LOGI("Loaded rewarded video");
+
+  LOGI("Showing rewarded video");
+  firebase::admob::rewarded_video::Show(state->activity->clazz);
+  WaitForFutureCompletion(state, firebase::admob::rewarded_video::ShowLastResult());
+  LOGI("Showed rewarded video");
 }
 
 /**
@@ -316,6 +427,9 @@ void android_main(struct android_app* state) {
     }
 
     init_admob(state);
+    load_interstitial_ad(state);
+    load_rewarded_video(state);
+    load_banner_ad(state);
 
     // loop waiting for stuff to do.
 
@@ -342,9 +456,9 @@ void android_main(struct android_app* state) {
                     ASensorEvent event;
                     while (ASensorEventQueue_getEvents(engine.sensorEventQueue,
                                                        &event, 1) > 0) {
-                        LOGI("accelerometer: x=%f y=%f z=%f",
-                             event.acceleration.x, event.acceleration.y,
-                             event.acceleration.z);
+                        // LOGI("accelerometer: x=%f y=%f z=%f",
+                        //      event.acceleration.x, event.acceleration.y,
+                        //      event.acceleration.z);
                     }
                 }
             }
@@ -352,6 +466,7 @@ void android_main(struct android_app* state) {
             // Check if we are exiting.
             if (state->destroyRequested != 0) {
                 engine_term_display(&engine);
+                release_admob(state);
                 return;
             }
         }
@@ -368,7 +483,5 @@ void android_main(struct android_app* state) {
             engine_draw_frame(&engine);
         }
     }
-
-    release_admob(state);
 }
 //END_INCLUDE(all)

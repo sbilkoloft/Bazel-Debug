@@ -6,7 +6,7 @@ android_binary(
         '//project:main',
 	'@androidsdk//com.google.firebase:firebase-ads-9.6.1'
     ],
-
+    manifest_values = {'applicationId': 'mybazelapp.android'},
     resource_files = glob(['res/**']),
 
     assets = glob(['assets/**']),
